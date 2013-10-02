@@ -1,0 +1,236 @@
+#!/usr/bin/env lua
+
+local arg = {...}
+
+local options = {
+   word = false,
+   insensitive = true,
+   comments = false,
+   strings = false,
+   keys = false,
+   recursive = true,
+}
+
+local set_options = {
+   ["-w"] = "word",
+   ["-i"] = "insensitive",
+   ["-c"] = "comments",
+   ["-s"] = "strings",
+   ["-k"] = "keys",
+   ["-r"] = "recursive",
+}
+
+repeat
+   local set = false
+   for i, a in ipairs(arg) do
+      if a == "--help" then
+         options.help = true
+         set = false
+         break
+      end
+      if a:sub(1,1) == "-" and #a > 2 then
+         table.remove(arg, i)
+         for i = 2, #a do
+            table.insert(arg, "-"..a:sub(i,i))
+         end
+         set = true
+         break
+      end
+      if a == "--" then
+         table.remove(arg, i)
+         set = false
+         break
+      end
+      local is_set = set_options[a]
+      if is_set then
+         table.remove(arg, i)
+         options[is_set] = true
+         set = true
+         break
+      end
+      local is_unset = set_options[a:lower()]
+      if is_unset then
+         table.remove(arg, i)
+         options[is_unset] = false
+         set = true
+         break
+      end
+   end
+until not set
+
+if options.help or #arg == 0 then
+print([[
+codegrep - a grep-like tool tailored for code
+
+codegrep is like grep, but it is able to skip comments and strings in the code.
+
+Usage:
+   codegrep [-wWiIcCsS] <pattern> [files...]
+
+Pattern is a Lua pattern, which is similar to regex but not the same,
+except that '-' is taken literally.
+
+Source files supported are: *.c *.h *.lua *.java
+
+If files are not given, it recursively searches for source files in the
+current directory (-r is accepted for compatibility but ignored).
+   
+Options:
+   -w -W  Enable or disable whole-word search (default is off)
+   -i -I  Enable or disable case-insensitive search (default is on)
+   -c -C  Enable or disable search in comments (default is off: skips comments)
+   -s -S  Enable or disable search in strings (default is off: skips strings)
+   -k -K  Enable or disable search in key-like strings, that is, strings
+          containing only the search term (default is off: skips those strings)
+   
+Example:
+   codegrep -wc read
+   
+   Looks for the word read in all source files of the tree, including comments.
+
+]])
+   os.exit(0)
+end
+
+local pattern = arg[1]
+table.remove(arg, 1)
+
+pattern = pattern:gsub("%-", "%%-")
+
+if options.insensitive then
+   pattern = pattern:lower()
+end
+
+if #arg == 0 then
+   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java'"):lines() do
+      table.insert(arg, name)
+   end
+end
+
+local function single_line_cut(line, marker)
+   local sc = line:find(marker, 1, true)
+   if sc then
+      line = line:sub(1, sc - 1)
+   end
+   return line
+end
+
+local function check_key(s)
+   if options.insensitive then
+      s = s:lower()
+   end
+   return s:match("^"..pattern.."$")
+end
+
+local function multi_line_cut(line, opener, closer)
+   local comment = false
+   local cc = 1
+   while true do
+      local mc = line:find(opener, cc, true)
+      if mc then
+         cc = line:find(closer, mc+#opener, true)
+         if cc then
+            if ((not options.keys) or not check_key(line:sub(mc+#opener, cc-1))) then
+               line = line:sub(1, mc - 1)..(" "):rep(cc + #closer - mc)..line:sub(cc + #closer, -1)
+            end
+            cc = cc + #closer
+         else
+            line = line:sub(1, mc - 1)
+            comment = true
+            break
+         end
+      else
+         break
+      end
+   end
+   return line, comment
+end
+
+local function in_multi_line(line, opener, closer)
+   local comment = true
+   local cc = line:find(closer, 1, true)
+   if cc then
+      line = (" "):rep(cc + 1)..line:sub(cc + #closer, -1)
+      comment = false
+   else
+      line = ""
+   end
+   return line, comment
+end
+
+local function is(name, ext)
+   return name:match(".*%."..ext)
+end
+
+for _, name in ipairs(arg) do
+   local file = io.open(name)
+   if file then
+      local comment = false
+      local multistring = false
+      local n = 1
+      for line in file:lines() do
+         local orig = line
+         if not options.comments then
+            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
+               if comment then
+                  line, comment = in_multi_line(line, "/*", "*/")
+               end
+               if not comment then
+                  line = single_line_cut(line, "//")
+                  line, comment = multi_line_cut(line, "/*", "*/")
+               end
+            elseif is(name,"lua") then
+               if comment then
+                  line, comment = in_multi_line(line, "--[[", "]]")
+               end
+               if not comment then
+                  line, comment = multi_line_cut(line, "--[[", "]]")
+               end
+               if not comment then
+                  line = single_line_cut(line, "--")
+               end
+            end
+         end
+         if not options.strings then
+            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
+               line = multi_line_cut(line, '"', '"')
+               line = multi_line_cut(line, "'", "'")
+            elseif is(name,"lua") then
+               if multistring then
+                  line, multistring = in_multi_line(line, '[[', ']]')
+               end
+               if not multistring then
+                  line = multi_line_cut(line, '"', '"')
+                  line, multistring = multi_line_cut(line, '[[', ']]')
+               end
+            end
+         end
+         if options.insensitive then
+            line = line:lower()
+         end
+         local show = false
+         local starts, stops = {}, {}
+         for start, match, stop in line:gmatch("()("..pattern..")()") do
+            if (not options.word) or ((not line:sub(start-1,start-1):match("[%w_]")) and (not line:sub(stop,stop):match("[%w_]"))) then
+               table.insert(starts, start)
+               table.insert(stops, stop)
+               show = true
+            end
+         end
+         if show then
+            local out = { "\27[1;35m", name, " \27[1;32m", tostring(n), ":\27[0m" }
+            local at = 1
+            for i=1, #starts do
+               table.insert(out, orig:sub(at, starts[i]-1))
+               table.insert(out, "\27[1;31m")
+               table.insert(out, orig:sub(starts[i], stops[i]-1))
+               table.insert(out, "\27[0m")
+               at = stops[i]
+            end
+            table.insert(out, orig:sub(at, -1))
+            print(table.concat(out))
+         end
+         n = n + 1
+      end
+   end
+end
