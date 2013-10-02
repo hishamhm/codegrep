@@ -14,7 +14,7 @@ codegrep is like grep, but it is able to skip comments and strings in the code.
 Pattern is a Lua pattern, which is similar to regex but not the same,
 except that '-' is taken literally.
 
-Source files supported are: *.c *.h *.lua *.java
+Source files supported are: *.c *.h *.lua *.java *.grace
 
 If files are not given, it recursively searches for source files in the
 current directory (-r is accepted for compatibility but ignored).
