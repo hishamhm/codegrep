@@ -70,7 +70,7 @@ Usage:
 Pattern is a Lua pattern, which is similar to regex but not the same,
 except that '-' is taken literally.
 
-Source files supported are: *.c *.h *.lua *.java
+Source files supported are: *.c *.h *.lua *.java *.grace
 
 If files are not given, it recursively searches for source files in the
 current directory (-r is accepted for compatibility but ignored).
@@ -102,7 +102,7 @@ if options.insensitive then
 end
 
 if #arg == 0 then
-   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java'"):lines() do
+   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java' -or -name '*.grace' -or -name '*.grc'"):lines() do
       table.insert(arg, name)
    end
 end
@@ -179,6 +179,10 @@ for _, name in ipairs(arg) do
                   line = single_line_cut(line, "//")
                   line, comment = multi_line_cut(line, "/*", "*/")
                end
+           elseif is(name,"grace") or is(name,"grc") then
+               if not comment then
+                  line = single_line_cut(line, "//")
+               end
             elseif is(name,"lua") then
                if comment then
                   line, comment = in_multi_line(line, "--[[", "]]")
@@ -195,6 +199,8 @@ for _, name in ipairs(arg) do
             if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
                line = multi_line_cut(line, '"', '"')
                line = multi_line_cut(line, "'", "'")
+           elseif is(name,"grace") or is(name,"grc") then
+               line = multi_line_cut(line, '"', '"')
             elseif is(name,"lua") then
                if multistring then
                   line, multistring = in_multi_line(line, '[[', ']]')
