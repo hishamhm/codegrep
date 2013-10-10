@@ -162,6 +162,9 @@ local function is(name, ext)
    return name:match(".*%."..ext)
 end
 
+
+local found_any = false
+
 for _, name in ipairs(arg) do
    local file = io.open(name)
    if file then
@@ -235,8 +238,12 @@ for _, name in ipairs(arg) do
             end
             table.insert(out, orig:sub(at, -1))
             print(table.concat(out))
+            found_any = true
          end
          n = n + 1
       end
    end
 end
+
+os.exit(found_any and 0 or 1)
+
