@@ -107,9 +107,14 @@ if #arg == 0 then
    end
 end
 
-local function single_line_cut(line, marker)
+local function single_line_cut(line, marker, except)
    local sc = line:find(marker, 1, true)
    if sc then
+      if except then
+         if line:sub(sc, sc+#except-1) == except then
+            return line
+         end
+      end
       line = line:sub(1, sc - 1)
    end
    return line
@@ -162,6 +167,19 @@ local function is(name, ext)
    return name:match(".*%."..ext)
 end
 
+local function single_and_multi_cuts(line, comment, mopen, mclose, sopen, sexcept)
+   if comment then
+      line, comment = in_multi_line(line, "/*", "*/")
+   end
+   if not comment then
+      line = single_line_cut(line, "//")
+      line, comment = multi_line_cut(line, "/*", "*/")
+   end
+   if comment then
+      line = single_line_cut(line, "//")
+   end
+   return line, comment
+end
 
 local found_any = false
 
@@ -175,27 +193,13 @@ for _, name in ipairs(arg) do
          local orig = line
          if not options.comments then
             if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
-               if comment then
-                  line, comment = in_multi_line(line, "/*", "*/")
-               end
-               if not comment then
-                  line = single_line_cut(line, "//")
-                  line, comment = multi_line_cut(line, "/*", "*/")
-               end
+               line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
            elseif is(name,"grace") or is(name,"grc") then
                if not comment then
                   line = single_line_cut(line, "//")
                end
             elseif is(name,"lua") then
-               if comment then
-                  line, comment = in_multi_line(line, "--[[", "]]")
-               end
-               if not comment then
-                  line, comment = multi_line_cut(line, "--[[", "]]")
-               end
-               if not comment then
-                  line = single_line_cut(line, "--")
-               end
+               line, comment = single_and_multi_cuts(line, comment, "--[[", "]]", "--", "--[[")
             end
          end
          if not options.strings then
