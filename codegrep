@@ -194,7 +194,7 @@ for _, name in ipairs(arg) do
          if not options.comments then
             if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
                line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
-           elseif is(name,"grace") or is(name,"grc") then
+            elseif is(name,"grace") or is(name,"grc") then
                if not comment then
                   line = single_line_cut(line, "//")
                end
