@@ -169,14 +169,14 @@ end
 
 local function single_and_multi_cuts(line, comment, mopen, mclose, sopen, sexcept)
    if comment then
-      line, comment = in_multi_line(line, "/*", "*/")
+      line, comment = in_multi_line(line, mopen, mclose)
    end
    if not comment then
-      line = single_line_cut(line, "//")
-      line, comment = multi_line_cut(line, "/*", "*/")
+      line = single_line_cut(line, sopen, sexcept)
+      line, comment = multi_line_cut(line, mopen, mclose)
    end
    if comment then
-      line = single_line_cut(line, "//")
+      line = single_line_cut(line, sopen, sexcept)
    end
    return line, comment
 end
