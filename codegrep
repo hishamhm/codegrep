@@ -164,7 +164,7 @@ local function in_multi_line(line, opener, closer)
 end
 
 local function is(name, ext)
-   return name:match(".*%."..ext)
+   return name:match(".*%."..ext.."$")
 end
 
 local function single_and_multi_cuts(line, comment, mopen, mclose, sopen, sexcept)
