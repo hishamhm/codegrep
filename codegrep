@@ -70,7 +70,7 @@ Usage:
 Pattern is a Lua pattern, which is similar to regex but not the same,
 except that '-' is taken literally.
 
-Source files supported are: *.c *.h *.lua *.java *.grace
+Source files supported are: *.c *.h *.lua *.java *.grace *.js *.html
 
 If files are not given, it recursively searches for source files in the
 current directory (-r is accepted for compatibility but ignored).
@@ -102,7 +102,7 @@ if options.insensitive then
 end
 
 if #arg == 0 then
-   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java' -or -name '*.grace' -or -name '*.grc'"):lines() do
+   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java' -or -name '*.grace' -or -name '*.grc' -or -name '*.js' -or -name '*.html' -or -name '*.htm'"):lines() do
       table.insert(arg, name)
    end
 end
@@ -164,7 +164,7 @@ local function in_multi_line(line, opener, closer)
 end
 
 local function is(name, ext)
-   return name:match(".*%."..ext)
+   return name:match(".*%."..ext.."$")
 end
 
 local function single_and_multi_cuts(line, comment, mopen, mclose, sopen, sexcept)
@@ -189,10 +189,11 @@ for _, name in ipairs(arg) do
       local comment = false
       local multistring = false
       local n = 1
+      local htmlmode = "html"
       for line in file:lines() do
          local orig = line
          if not options.comments then
-            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
+            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") or is(name, "js") then
                line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
             elseif is(name,"grace") or is(name,"grc") then
                if not comment then
@@ -200,10 +201,45 @@ for _, name in ipairs(arg) do
                end
             elseif is(name,"lua") then
                line, comment = single_and_multi_cuts(line, comment, "--[[", "]]", "--", "--[[")
+            elseif is(name,"html") or is(name, "htm") then
+               if htmlmode == "html" then
+                  if not comment then
+                     line, comment = multi_line_cut(line, "<!--", "-->")
+                  else
+                     line, comment = in_multi_line(line, "<!--", "-->")
+                  end
+                  if not comment then
+                     local isjs = false
+                     line, isjs = multi_line_cut(line, "<script", "</script>")
+                     if isjs then
+                        htmlmode = "js"
+                     else
+                        local iscss = false
+                        line, iscss = multi_line_cut(line, "<style", "</style>")
+                        if iscss then
+                           htmlmode = "css"
+                        end
+                     end
+                  end
+               elseif htmlmode == "js" then
+                  line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
+                  local isjs = true
+                  _, isjs = in_multi_line(line, "<script", "</script>")
+                  if not isjs then
+                     htmlmode = "html"
+                  end
+               elseif htmlmode == "css" then
+                  line, comment = single_line_cut(line, "//")
+                  local iscss = true
+                  _, iscss = in_multi_line(line, "<style", "</style>")
+                  if not iscss then
+                     htmlmode = "html"
+                  end
+               end
             end
          end
          if not options.strings then
-            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") then
+            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") or is(name, "js") then
                line = multi_line_cut(line, '"', '"')
                line = multi_line_cut(line, "'", "'")
            elseif is(name,"grace") or is(name,"grc") then
@@ -215,6 +251,11 @@ for _, name in ipairs(arg) do
                if not multistring then
                   line = multi_line_cut(line, '"', '"')
                   line, multistring = multi_line_cut(line, '[[', ']]')
+               end
+            elseif is(name, "html") or is(name, "htm") then
+               if htmlmode == "js" then
+                  line = multi_line_cut(line, '"', '"')
+                  line = multi_line_cut(line, "'", "'")
                end
             end
          end
