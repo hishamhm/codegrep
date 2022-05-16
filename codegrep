@@ -102,7 +102,7 @@ if options.insensitive then
 end
 
 if #arg == 0 then
-   for name in io.popen("find . -name '*.[ch]' -or -name '*.lua' -or -name '*.java' -or -name '*.grace' -or -name '*.grc' -or -name '*.js' -or -name '*.html' -or -name '*.htm'"):lines() do
+   for name in io.popen("find . -type f -and '(' -name '*.[ch]' -or -name '*.lua' -or -name '*.cpp' -or -name '*.hh' -or -name '*.cc' -or -name '*.java' -or -name '*.grace' -or -name '*.grc' -or -name '*.js' -or -name '*.html' -or -name '*.htm' ')'"):lines() do
       table.insert(arg, name)
    end
 end
@@ -151,7 +151,7 @@ local function multi_line_cut(line, opener, closer)
    return line, comment
 end
 
-local function in_multi_line(line, opener, closer)
+local function in_multi_line(line, closer)
    local comment = true
    local cc = line:find(closer, 1, true)
    if cc then
@@ -163,13 +163,9 @@ local function in_multi_line(line, opener, closer)
    return line, comment
 end
 
-local function is(name, ext)
-   return name:match(".*%."..ext.."$")
-end
-
 local function single_and_multi_cuts(line, comment, mopen, mclose, sopen, sexcept)
    if comment then
-      line, comment = in_multi_line(line, mopen, mclose)
+      line, comment = in_multi_line(line, mclose)
    end
    if not comment then
       line = single_line_cut(line, sopen, sexcept)
@@ -183,9 +179,27 @@ end
 
 local found_any = false
 
+local styles = {
+   c = "c",
+   cpp = "c",
+   cc = "c",
+   hh = "c",
+   h = "c",
+   java = "c",
+   js = "c",
+   grace = "grace",
+   grc = "grace",
+   lua = "lua",
+   html = "html",
+   htm = "html",
+}
+
 for _, name in ipairs(arg) do
    local file = io.open(name)
    if file then
+      local ext = name:match("%.([^%.]*)$")
+      local style = styles[ext]
+
       local comment = false
       local multistring = false
       local n = 1
@@ -193,66 +207,66 @@ for _, name in ipairs(arg) do
       for line in file:lines() do
          local orig = line
          if not options.comments then
-            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") or is(name, "js") then
+            if style == "c" then
                line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
-            elseif is(name,"grace") or is(name,"grc") then
+            elseif style == "grace" then
                if not comment then
                   line = single_line_cut(line, "//")
                end
-            elseif is(name,"lua") then
+            elseif style == "lua" then
                line, comment = single_and_multi_cuts(line, comment, "--[[", "]]", "--", "--[[")
-            elseif is(name,"html") or is(name, "htm") then
+            elseif style == "html" then
                if htmlmode == "html" then
                   if not comment then
                      line, comment = multi_line_cut(line, "<!--", "-->")
                   else
-                     line, comment = in_multi_line(line, "<!--", "-->")
+                     line, comment = in_multi_line(line, "-->")
                   end
                   if not comment then
-                     local isjs = false
-                     line, isjs = multi_line_cut(line, "<script", "</script>")
-                     if isjs then
+                     local in_js
+                     line, in_js = multi_line_cut(line, "<script", "</script>")
+                     if in_js then
                         htmlmode = "js"
                      else
-                        local iscss = false
-                        line, iscss = multi_line_cut(line, "<style", "</style>")
-                        if iscss then
+                        local in_css
+                        line, in_css = multi_line_cut(line, "<style", "</style>")
+                        if in_css then
                            htmlmode = "css"
                         end
                      end
                   end
                elseif htmlmode == "js" then
                   line, comment = single_and_multi_cuts(line, comment, "/*", "*/", "//")
-                  local isjs = true
-                  _, isjs = in_multi_line(line, "<script", "</script>")
-                  if not isjs then
+                  local in_js
+                  _, in_js = in_multi_line(line, "</script>")
+                  if not in_js then
                      htmlmode = "html"
                   end
                elseif htmlmode == "css" then
                   line, comment = single_line_cut(line, "//")
-                  local iscss = true
-                  _, iscss = in_multi_line(line, "<style", "</style>")
-                  if not iscss then
+                  local in_css
+                  _, in_css = in_multi_line(line, "</style>")
+                  if not in_css then
                      htmlmode = "html"
                   end
                end
             end
          end
          if not options.strings then
-            if is(name,"c") or is(name,"cpp") or is(name,"h") or is(name,"java") or is(name, "js") then
+            if style == "c" then
                line = multi_line_cut(line, '"', '"')
                line = multi_line_cut(line, "'", "'")
-           elseif is(name,"grace") or is(name,"grc") then
+            elseif style == "grace" then
                line = multi_line_cut(line, '"', '"')
-            elseif is(name,"lua") then
+            elseif style == "lua" then
                if multistring then
-                  line, multistring = in_multi_line(line, '[[', ']]')
+                  line, multistring = in_multi_line(line, ']]')
                end
                if not multistring then
                   line = multi_line_cut(line, '"', '"')
                   line, multistring = multi_line_cut(line, '[[', ']]')
                end
-            elseif is(name, "html") or is(name, "htm") then
+            elseif style == "html" then
                if htmlmode == "js" then
                   line = multi_line_cut(line, '"', '"')
                   line = multi_line_cut(line, "'", "'")
@@ -264,7 +278,7 @@ for _, name in ipairs(arg) do
          end
          local show = false
          local starts, stops = {}, {}
-         for start, match, stop in line:gmatch("()("..pattern..")()") do
+         for start, _, stop in line:gmatch("()("..pattern..")()") do
             if (not options.word) or ((not line:sub(start-1,start-1):match("[%w_]")) and (not line:sub(stop,stop):match("[%w_]"))) then
                table.insert(starts, start)
                table.insert(stops, stop)
